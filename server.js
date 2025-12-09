@@ -9,7 +9,9 @@ const PORT = process.env.PORT || 3000;
 let state = {
   roundId: 1,
   winner: null,        // string: player/laptop name
-  winnerTime: null     // ISO string
+  winnerTime: null,    // ISO string
+  buzzes: [],          // array of { playerName, time }
+  showRanking: false   // facilitator-controlled toggle
 };
 
 app.use(cors());
@@ -27,37 +29,50 @@ app.post("/api/buzz", (req, res) => {
     return res.status(400).json({ ok: false, error: "playerName is required" });
   }
 
-  // "Critical section": first one to set winner wins, others just see who won
+  const name = playerName.trim();
+  const now = new Date().toISOString();
+
+  // Track EVERY buzz in order
+  state.buzzes.push({ playerName: name, time: now });
+
+  let first = false;
+
+  // First one to set winner wins
   if (!state.winner) {
-    state.winner = playerName.trim();
-    state.winnerTime = new Date().toISOString();
-    return res.json({
-      ok: true,
-      first: true,
-      winner: state.winner,
-      winnerTime: state.winnerTime,
-      roundId: state.roundId
-    });
-  } else {
-    return res.json({
-      ok: true,
-      first: false,
-      winner: state.winner,
-      winnerTime: state.winnerTime,
-      roundId: state.roundId
-    });
+    state.winner = name;
+    state.winnerTime = now;
+    first = true;
   }
+
+  return res.json({
+    ok: true,
+    first,
+    ...state
+  });
 });
 
-// Reset round (simple "admin" endpoint)
-// If you want, add a reset code: e.g. check req.query.code
+// Reset round (facilitator)
 app.post("/api/reset", (req, res) => {
   state = {
     roundId: state.roundId + 1,
     winner: null,
-    winnerTime: null
+    winnerTime: null,
+    buzzes: [],
+    showRanking: state.showRanking // keep same setting next round
   };
   res.json({ ok: true, ...state });
+});
+
+// Update settings (e.g., showRanking) - facilitator only (password handled on frontend)
+app.post("/api/settings", (req, res) => {
+  const { showRanking } = req.body;
+
+  if (typeof showRanking !== "boolean") {
+    return res.status(400).json({ ok: false, error: "showRanking must be boolean" });
+  }
+
+  state.showRanking = showRanking;
+  return res.json({ ok: true, showRanking: state.showRanking });
 });
 
 app.get("/", (req, res) => {
